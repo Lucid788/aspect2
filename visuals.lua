@@ -169,33 +169,88 @@ RunService:BindToRenderStep('AspectCrosshair',Enum.RenderPriority.Last.Value+1,f
     end
 end)
 
--- ── AP EFFECT ─────────────────────────────────────────────────────
+-- ── AP EFFECT  (2D screen-center rotating text with black outline) ──────────────
 local FUN = { apEffect=false }
-local apPart=nil; local apAngle=0
+local apAngle = 0
 
-local function buildAPEffect()
-    if apPart then pcall(function() apPart:Destroy() end); apPart=nil end
-    apPart=Instance.new('Part'); apPart.Size=Vector3.new(1,1,1); apPart.Anchored=true
-    apPart.CanCollide=false; apPart.Transparency=1; apPart.Name='AspectAPEffect'; apPart.Parent=workspace
-    local bb=Instance.new('BillboardGui'); bb.Size=UDim2.new(0,200,0,80)
-    bb.AlwaysOnTop=true; bb.Parent=apPart
-    local lbl=Instance.new('TextLabel'); lbl.Size=UDim2.fromScale(1,1)
-    lbl.BackgroundTransparency=1; lbl.Text='AP'; lbl.Font=Enum.Font.GothamBold
-    lbl.TextScaled=true; lbl.TextColor3=Color3.fromRGB(255,80,80)
-    lbl.TextStrokeTransparency=0; lbl.TextStrokeColor3=Color3.fromRGB(0,0,0); lbl.Parent=bb
+-- Drawing objects for AP effect
+local apLines = {}   -- outline lines (black)
+local apText  = nil  -- white text label
+
+local AP_RADIUS   = 60    -- orbit radius around screen center
+local AP_TEXT_STR = 'AP'
+
+local function buildAPDrawings()
+    -- destroy old
+    for _, d in ipairs(apLines) do pcall(function() d:Remove() end) end
+    apLines = {}
+    if apText then pcall(function() apText:Remove() end); apText = nil end
+
+    -- Outline text (black, slightly offset to simulate stroke)
+    for i = 1, 4 do
+        local ol = Drawing.new('Text')
+        ol.Text  = AP_TEXT_STR
+        ol.Size  = 28
+        ol.Font  = Drawing.Fonts.GothamBold
+        ol.Color = Color3.fromRGB(0, 0, 0)
+        ol.Transparency = 1
+        ol.Center   = true
+        ol.Outline  = false
+        ol.Visible  = false
+        apLines[i] = ol
+    end
+
+    -- Main white text
+    apText = Drawing.new('Text')
+    apText.Text  = AP_TEXT_STR
+    apText.Size  = 28
+    apText.Font  = Drawing.Fonts.GothamBold
+    apText.Color = Color3.fromRGB(255, 255, 255)
+    apText.Transparency = 1
+    apText.Center   = true
+    apText.Outline  = false
+    apText.Visible  = false
 end
 
 local function destroyAPEffect()
-    if apPart then pcall(function() apPart:Destroy() end); apPart=nil end
+    for _, d in ipairs(apLines) do pcall(function() d:Remove() end) end
+    apLines = {}
+    if apText then pcall(function() apText:Remove() end); apText = nil end
 end
 
-RunService:BindToRenderStep('AspectAPEffect',Enum.RenderPriority.Last.Value,function()
-    if not FUN.apEffect then return end
-    local c=LocalPlayer.Character; if not c then return end
-    local hrp=c:FindFirstChild('HumanoidRootPart'); if not hrp then return end
-    if not apPart or not apPart.Parent then buildAPEffect() end
-    apAngle=(apAngle+0.02)%(math.pi*2)
-    apPart.CFrame=CFrame.new(hrp.Position+Vector3.new(math.cos(apAngle)*3,1.5,math.sin(apAngle)*3))
+-- Build immediately
+buildAPDrawings()
+
+RunService:BindToRenderStep('AspectAPEffect', Enum.RenderPriority.Last.Value, function()
+    if not FUN.apEffect then
+        for _, d in ipairs(apLines) do d.Visible = false end
+        if apText then apText.Visible = false end
+        return
+    end
+
+    -- Rebuild if destroyed
+    if not apText then buildAPDrawings() end
+
+    Camera = workspace.CurrentCamera
+    local center = Camera.ViewportSize / 2
+    apAngle = (apAngle + 0.03) % (math.pi * 2)
+
+    local px = center.X + math.cos(apAngle) * AP_RADIUS
+    local py = center.Y + math.sin(apAngle) * AP_RADIUS
+    local pos = Vector2.new(px, py)
+
+    -- Outline offsets (top, bottom, left, right)
+    local offsets = {
+        Vector2.new(0, -2), Vector2.new(0, 2),
+        Vector2.new(-2, 0), Vector2.new(2, 0),
+    }
+    for i, d in ipairs(apLines) do
+        d.Position = pos + offsets[i]
+        d.Visible  = true
+    end
+
+    apText.Position = pos
+    apText.Visible  = true
 end)
 
 -- ── GUN CHARM / NO ANIM ───────────────────────────────────────────
@@ -266,7 +321,7 @@ return {
     revertSkybox    = revertSkybox,
     crossBuild      = crossBuild,
     crossDestroyAll = crossDestroyAll,
-    buildAPEffect   = buildAPEffect,
+    buildAPEffect   = function() end,  -- replaced by 2D drawing, kept for compat
     destroyAPEffect = destroyAPEffect,
     startNoAnim     = startNoAnim,
     stopNoAnim      = stopNoAnim,
