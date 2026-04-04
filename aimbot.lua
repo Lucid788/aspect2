@@ -11,7 +11,7 @@ local AB = {
     target    = nil,
     teamCheck = false,
     wallCheck = false,
-    keybind   = nil,   -- set by main after AddKeyPicker
+    keybind   = nil,   -- injected by main: AB.keybind = KeyPicker object
 }
 
 local Players         = game:GetService('Players')
@@ -73,8 +73,9 @@ end
 -- Keybind state: called every RenderStepped, never errors
 local function isActive()
     if not AB.enabled then return false end
-    if not AB.keybind  then return false end
-    local ok, state = pcall(function() return AB.keybind:GetState() end)
+    local kp = AB.keybind
+    if not kp then return false end
+    local ok, state = pcall(function() return kp:GetState() end)
     return ok and state == true
 end
 
