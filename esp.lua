@@ -1,276 +1,436 @@
 -- ================================================================
---  Aspect Hub | esp.lua
---  github.com/Lucid788/aspect/esp.lua
+--  Aspect Hub | visuals.lua
+--  github.com/Lucid788/aspect/visuals.lua
 -- ================================================================
 
-local Players    = game:GetService('Players')
-local RunService = game:GetService('RunService')
-local Camera     = workspace.CurrentCamera
-local LocalPlayer= Players.LocalPlayer
+local RunService  = game:GetService('RunService')
+local Lighting    = game:GetService('Lighting')
+local Players     = game:GetService('Players')
+local LocalPlayer = Players.LocalPlayer
 
-local ESP = {
-    box       = false,
-    line      = false,
-    skel      = false,
-    charm     = false,
-    teamCheck = false,
-    fillColor = Color3.fromRGB(255,215,0),
-    outColor  = Color3.fromRGB(255,255,255),
-    rainbow   = false,
-    rainbowHue= 0,
-    rainbowSpeed = 0.004,
-    gradient  = false,   -- gradient mode: each player gets offset hue
+-- ================================================================
+--  X-RAY
+-- ================================================================
+local xrayParts = {}
+local VIS = {
+    xray       = false,
+    xrayRadius = 200,
+    xrayTrans  = 0.35,
+    fullbright = false,
 }
 
-local espBoxes     = {}
-local espBoxConns  = {}
-local espLines     = {}
-local espLineConns = {}
-local espSkel      = {}
-local charmHL      = {}
+local XRAY_BIND = 'AspectXRay'
 
-local C_GREEN  = Color3.fromRGB(0,255,0)
-local C_YELLOW = Color3.fromRGB(255,220,0)
-local C_RED    = Color3.fromRGB(255,0,0)
-
--- Rainbow color (shared base hue)
-local function getRainbow(offset)
-    offset = offset or 0
-    return Color3.fromHSV((ESP.rainbowHue + offset) % 1, 1, 1)
-end
-
--- Update rainbow hue each frame
-RunService:BindToRenderStep('AspectRainbow', Enum.RenderPriority.Last.Value, function()
-    if ESP.rainbow or ESP.gradient then
-        ESP.rainbowHue = (ESP.rainbowHue + ESP.rainbowSpeed) % 1
-    end
-end)
-
-local function skipESP(p) return ESP.teamCheck and p.Team == LocalPlayer.Team end
-
--- ── BOX ──────────────────────────────────────────────────────────
-local function removeBoxESP(p)
-    if espBoxes[p]    then espBoxes[p]:Remove();       espBoxes[p]=nil    end
-    if espBoxConns[p] then espBoxConns[p]:Disconnect(); espBoxConns[p]=nil end
-end
-
-local function createBoxESP(player)
-    if skipESP(player) or espBoxes[player] then return end
-    local box = Drawing.new('Square')
-    box.Visible=false; box.Thickness=1.5; box.Transparency=1; box.Filled=false
-    box.Color=Color3.fromRGB(255,50,50)
-    espBoxes[player] = box
-
-    -- gradient offset per player
-    local playerIdx = 0
-    for i,p in ipairs(Players:GetPlayers()) do if p==player then playerIdx=i; break end end
-    local offset = (playerIdx * 0.13) % 1
-
-    espBoxConns[player] = RunService.RenderStepped:Connect(function()
-        Camera = workspace.CurrentCamera
-        if not ESP.box or skipESP(player) then box.Visible=false; return end
-        local char = player.Character
-        local hrp  = char and char:FindFirstChild('HumanoidRootPart')
-        if not hrp then box.Visible=false; return end
-        local _,onScreen = Camera:WorldToViewportPoint(hrp.Position)
-        if not onScreen then box.Visible=false; return end
-        local top = Camera:WorldToViewportPoint(hrp.Position+Vector3.new(0,3,0))
-        local bot = Camera:WorldToViewportPoint(hrp.Position+Vector3.new(0,-3,0))
-        local h = math.abs(top.Y-bot.Y); local w=h*0.55
-        box.Size=Vector2.new(w,h); box.Position=Vector2.new(top.X-w*0.5,top.Y)
-        if ESP.gradient then
-            box.Color = getRainbow(offset)
-        elseif ESP.rainbow then
-            box.Color = getRainbow()
-        else
-            box.Color = Color3.fromRGB(255,50,50)
-        end
-        box.Visible=true
-    end)
-end
-
--- ── LINE ─────────────────────────────────────────────────────────
-local function removeLineESP(p)
-    if espLines[p]     then espLines[p]:Remove();        espLines[p]=nil     end
-    if espLineConns[p] then espLineConns[p]:Disconnect(); espLineConns[p]=nil end
-end
-
-local function createLineESP(player)
-    if skipESP(player) or espLines[player] then return end
-    local line=Drawing.new('Line')
-    line.Visible=false; line.Thickness=1.5; line.Transparency=1
-    espLines[player]=line
-
-    local playerIdx=0
-    for i,p in ipairs(Players:GetPlayers()) do if p==player then playerIdx=i; break end end
-    local offset=(playerIdx*0.13)%1
-
-    espLineConns[player]=RunService.RenderStepped:Connect(function()
-        Camera = workspace.CurrentCamera
-        if not ESP.line or skipESP(player) then line.Visible=false; return end
-        local lc=LocalPlayer.Character
-        local lHRP=lc and lc:FindFirstChild('HumanoidRootPart')
-        local pc=player.Character; local pHRP=pc and pc:FindFirstChild('HumanoidRootPart')
-        if not lHRP or not pHRP then line.Visible=false; return end
-        local dist=(pHRP.Position-lHRP.Position).Magnitude
-        if dist>500 then line.Visible=false; return end
-        local sp=Camera:WorldToViewportPoint(lHRP.Position)
-        local ep=Camera:WorldToViewportPoint(pHRP.Position)
-        if sp.Z<=0 or ep.Z<=0 then line.Visible=false; return end
-        local col
-        if ESP.gradient then
-            col = getRainbow(offset)
-        elseif ESP.rainbow then
-            col = getRainbow()
-        elseif dist<80 then col=C_GREEN
-        elseif dist<160 then col=C_GREEN:Lerp(C_YELLOW,(dist-80)/80)
-        else col=C_YELLOW:Lerp(C_RED,math.clamp((dist-160)/100,0,1)) end
-        line.From=Vector2.new(sp.X,sp.Y); line.To=Vector2.new(ep.X,ep.Y)
-        line.Color=col; line.Visible=true
-    end)
-end
-
--- ── SKELETON ─────────────────────────────────────────────────────
-local BONES={
-    {'Head','UpperTorso'},{'UpperTorso','LowerTorso'},
-    {'UpperTorso','LeftUpperArm'},{'LeftUpperArm','LeftLowerArm'},{'LeftLowerArm','LeftHand'},
-    {'UpperTorso','RightUpperArm'},{'RightUpperArm','RightLowerArm'},{'RightLowerArm','RightHand'},
-    {'LowerTorso','LeftUpperLeg'},{'LeftUpperLeg','LeftLowerLeg'},{'LeftLowerLeg','LeftFoot'},
-    {'LowerTorso','RightUpperLeg'},{'RightUpperLeg','RightLowerLeg'},{'RightLowerLeg','RightFoot'},
-}
-
-local function removeSkelESP(p)
-    if not espSkel[p] then return end
-    for _,l in ipairs(espSkel[p].lines) do l:Remove() end
-    if espSkel[p].conn then espSkel[p].conn:Disconnect() end
-    espSkel[p]=nil
-end
-
-local function createSkelESP(player)
-    if skipESP(player) or espSkel[player] then return end
-    local lines={}
-    for i=1,#BONES do
-        local l=Drawing.new('Line'); l.Thickness=1; l.Transparency=1
-        l.Color=Color3.fromRGB(255,50,50); l.Visible=false; lines[i]=l
-    end
-    local playerIdx=0
-    for i,p in ipairs(Players:GetPlayers()) do if p==player then playerIdx=i; break end end
-    local offset=(playerIdx*0.13)%1
-
-    local conn=RunService.RenderStepped:Connect(function()
-        Camera = workspace.CurrentCamera
-        if not ESP.skel or skipESP(player) then
-            for _,l in ipairs(lines) do l.Visible=false end; return
-        end
-        local char=player.Character
-        if not char then for _,l in ipairs(lines) do l.Visible=false end; return end
-        for i,pair in ipairs(BONES) do
-            local p1=char:FindFirstChild(pair[1]); local p2=char:FindFirstChild(pair[2])
-            local ln=lines[i]
-            if p1 and p2 then
-                local v1,ok1=Camera:WorldToViewportPoint(p1.Position)
-                local v2,ok2=Camera:WorldToViewportPoint(p2.Position)
-                if ok1 and ok2 then
-                    ln.From=Vector2.new(v1.X,v1.Y); ln.To=Vector2.new(v2.X,v2.Y)
-                    if ESP.gradient then
-                        ln.Color=getRainbow(offset)
-                    elseif ESP.rainbow then
-                        ln.Color=getRainbow()
-                    else
-                        ln.Color=Color3.fromRGB(255,50,50)
-                    end
-                    ln.Visible=true
-                else ln.Visible=false end
-            else ln.Visible=false end
+local function startXRay()
+    RunService:BindToRenderStep(XRAY_BIND, Enum.RenderPriority.Last.Value, function()
+        if not VIS.xray then return end
+        local char = LocalPlayer.Character; if not char then return end
+        local ok, parts = pcall(function()
+            return workspace:GetPartBoundsInRadius(char:GetPivot().Position, VIS.xrayRadius)
+        end)
+        if not ok or not parts then return end
+        for _, part in ipairs(parts) do
+            if not xrayParts[part] and part:IsA('BasePart')
+               and not part:IsDescendantOf(char) and part.Transparency < 0.85 then
+                xrayParts[part] = part.Transparency
+                part.Transparency = VIS.xrayTrans
+            end
         end
     end)
-    espSkel[player]={lines=lines,conn=conn}
 end
 
--- ── CHARM ────────────────────────────────────────────────────────
-local function removeCharmESP(p)
-    if charmHL[p] then charmHL[p]:Destroy(); charmHL[p]=nil end
-end
-
-local function createCharmESP(player)
-    if charmHL[player] then return end
-    local char=player.Character; if not char then return end
-    local h=Instance.new('Highlight')
-    h.Adornee=char; h.FillColor=ESP.fillColor; h.OutlineColor=ESP.outColor
-    h.FillTransparency=0.35; h.OutlineTransparency=0
-    h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; h.Parent=char
-    charmHL[player]=h
-end
-
--- Rainbow/gradient charm update
-RunService.RenderStepped:Connect(function()
-    if not (ESP.rainbow or ESP.gradient) then return end
-
-    local playerList = Players:GetPlayers()
-    for pi, player in ipairs(playerList) do
-        local h = charmHL[player]
-        if h and h.Parent then
-            local offset = ESP.gradient and ((pi * 0.13) % 1) or 0
-            local col = getRainbow(offset)
-            h.FillColor    = col
-            h.OutlineColor = col
+local function stopXRay()
+    pcall(function() RunService:UnbindFromRenderStep(XRAY_BIND) end)
+    for part, orig in pairs(xrayParts) do
+        if part and part.Parent then
+            pcall(function() part.Transparency = orig end)
         end
     end
-end)
+    table.clear(xrayParts)
+end
 
-local function refreshCharm()
-    if ESP.charm then
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p~=LocalPlayer and not skipESP(p) then createCharmESP(p) end
-        end
+-- ================================================================
+--  FULLBRIGHT
+-- ================================================================
+local function applyFullbright(on)
+    if on then
+        Lighting.Brightness    = 2
+        Lighting.ClockTime     = 14
+        Lighting.FogEnd        = 100000
+        Lighting.GlobalShadows = false
     else
-        for p in pairs(charmHL) do removeCharmESP(p) end
+        Lighting.Brightness    = 1
+        Lighting.ClockTime     = 12
+        Lighting.FogEnd        = 1000
+        Lighting.GlobalShadows = true
     end
 end
 
-local function watchCharm(player)
-    player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        if ESP.charm then createCharmESP(player) end
+-- ================================================================
+--  COLOR CORRECTION
+-- ================================================================
+local CC = {
+    enabled    = false,
+    brightness = 0,
+    contrast   = 0,
+    saturation = 0,
+    tintColor  = Color3.fromRGB(255, 255, 255),
+}
+local ccEffect = nil
+
+local function applyCC()
+    if not ccEffect or not ccEffect.Parent then
+        -- Remove any leftover from previous runs
+        local old = Lighting:FindFirstChild('AspectCC')
+        if old then old:Destroy() end
+        ccEffect = Instance.new('ColorCorrectionEffect')
+        ccEffect.Name   = 'AspectCC'
+        ccEffect.Parent = Lighting
+    end
+    ccEffect.Enabled    = CC.enabled
+    ccEffect.Brightness = CC.brightness
+    ccEffect.Contrast   = CC.contrast
+    ccEffect.Saturation = CC.saturation
+    ccEffect.TintColor  = CC.tintColor
+end
+
+local function removeCC()
+    if ccEffect and ccEffect.Parent then
+        ccEffect:Destroy()
+    end
+    ccEffect = nil
+    local old = Lighting:FindFirstChild('AspectCC')
+    if old then old:Destroy() end
+end
+
+-- ================================================================
+--  SKYBOX
+-- ================================================================
+local skyboxOrig = nil
+local SKYBOX_ID  = 'rbxassetid://139383601330300'
+
+local function clearSkyboxes()
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA('Sky') then v:Destroy() end
+    end
+end
+
+local function saveSkybox()
+    local s = Lighting:FindFirstChildOfClass('Sky')
+    if s then
+        skyboxOrig = {
+            Bk = s.SkyboxBk, Dn = s.SkyboxDn, Ft = s.SkyboxFt,
+            Lf = s.SkyboxLf, Rt = s.SkyboxRt, Up = s.SkyboxUp,
+        }
+    else
+        skyboxOrig = 'none'
+    end
+end
+
+local function applyCustomSkybox()
+    if not skyboxOrig then saveSkybox() end
+    clearSkyboxes()
+    local s = Instance.new('Sky')
+    for _, p in ipairs({'SkyboxBk','SkyboxDn','SkyboxFt','SkyboxLf','SkyboxRt','SkyboxUp'}) do
+        s[p] = SKYBOX_ID
+    end
+    s.Parent = Lighting
+end
+
+local function revertSkybox()
+    clearSkyboxes()
+    if type(skyboxOrig) == 'table' then
+        local s = Instance.new('Sky')
+        s.SkyboxBk = skyboxOrig.Bk; s.SkyboxDn = skyboxOrig.Dn; s.SkyboxFt = skyboxOrig.Ft
+        s.SkyboxLf = skyboxOrig.Lf; s.SkyboxRt = skyboxOrig.Rt; s.SkyboxUp = skyboxOrig.Up
+        s.Parent = Lighting
+    end
+end
+
+-- ================================================================
+--  CROSSHAIR (Drawing API)
+-- ================================================================
+local CROSS = {
+    enabled      = false,
+    barLen       = 10,
+    barThick     = 2,
+    barColor     = Color3.fromRGB(255, 255, 255),
+    barAlpha     = 1,
+    barGap       = 4,
+    circleOn     = false,
+    circleR      = 20,
+    circleFill   = false,
+    circleColor  = Color3.fromRGB(255, 255, 255),
+    circleAlpha  = 0.8,
+    outlineSize  = 1,
+    outlineColor = Color3.fromRGB(0, 0, 0),
+    rotateOn     = false,
+    rotateSpeed  = 2,
+    angle        = 0,
+    bars         = {},
+    circle       = nil,
+    outlines     = {},
+}
+
+local function crossDestroyAll()
+    for _, d in ipairs(CROSS.bars)     do pcall(function() d:Remove() end) end
+    for _, d in ipairs(CROSS.outlines) do pcall(function() d:Remove() end) end
+    if CROSS.circle then pcall(function() CROSS.circle:Remove() end); CROSS.circle = nil end
+    CROSS.bars = {}; CROSS.outlines = {}
+end
+
+local function crossBuild()
+    crossDestroyAll()
+    if not CROSS.enabled then return end
+    for i = 1, 4 do
+        local ol = Drawing.new('Line')
+        ol.Thickness    = CROSS.barThick + CROSS.outlineSize * 2
+        ol.Transparency = CROSS.barAlpha
+        ol.Color        = CROSS.outlineColor
+        ol.Visible      = false
+        CROSS.outlines[i] = ol
+
+        local bl = Drawing.new('Line')
+        bl.Thickness    = CROSS.barThick
+        bl.Transparency = CROSS.barAlpha
+        bl.Color        = CROSS.barColor
+        bl.Visible      = false
+        CROSS.bars[i] = bl
+    end
+    if CROSS.circleOn then
+        local c = Drawing.new('Circle')
+        c.Radius      = CROSS.circleR
+        c.Thickness   = CROSS.barThick
+        c.Color       = CROSS.circleColor
+        c.Transparency = CROSS.circleAlpha   -- correct property name
+        c.Filled      = CROSS.circleFill
+        c.Visible     = false
+        CROSS.circle  = c
+    end
+end
+
+RunService:BindToRenderStep('AspectCrosshair', Enum.RenderPriority.Last.Value + 1, function()
+    local Camera = workspace.CurrentCamera
+    if not CROSS.enabled then
+        for _, d in ipairs(CROSS.bars)     do d.Visible = false end
+        for _, d in ipairs(CROSS.outlines) do d.Visible = false end
+        if CROSS.circle then CROSS.circle.Visible = false end
+        return
+    end
+    if #CROSS.bars < 4 then crossBuild(); return end
+
+    local center = Camera.ViewportSize / 2
+    if CROSS.rotateOn then
+        CROSS.angle = (CROSS.angle + CROSS.rotateSpeed * 0.016) % (math.pi * 2)
+    end
+    local a = CROSS.angle
+    local dirs = {
+        Vector2.new( math.cos(a),  math.sin(a)),
+        Vector2.new(-math.cos(a), -math.sin(a)),
+        Vector2.new(-math.sin(a),  math.cos(a)),
+        Vector2.new( math.sin(a), -math.cos(a)),
+    }
+    for i = 1, 4 do
+        local d    = dirs[i]
+        local from = center + d * CROSS.barGap
+        local to   = center + d * (CROSS.barGap + CROSS.barLen)
+
+        local ol = CROSS.outlines[i]
+        ol.From      = from; ol.To = to
+        ol.Color     = CROSS.outlineColor
+        ol.Thickness = CROSS.barThick + CROSS.outlineSize * 2
+        ol.Visible   = true
+
+        local bl = CROSS.bars[i]
+        bl.From        = from; bl.To = to
+        bl.Color       = CROSS.barColor
+        bl.Thickness   = CROSS.barThick
+        bl.Transparency= CROSS.barAlpha
+        bl.Visible     = true
+    end
+
+    if CROSS.circle then
+        if CROSS.circleOn then
+            CROSS.circle.Position    = center
+            CROSS.circle.Radius      = CROSS.circleR
+            CROSS.circle.Filled      = CROSS.circleFill
+            CROSS.circle.Transparency= CROSS.circleAlpha   -- fixed
+            CROSS.circle.Visible     = true
+        else
+            CROSS.circle.Visible = false
+        end
+    end
+end)
+
+-- ================================================================
+--  AP EFFECT  (3-D rotating "AP" text around player)
+--  FIX: use FontFace instead of deprecated Font enum
+--       build BillboardGui ONCE, just update CFrame each frame
+-- ================================================================
+local FUN    = { apEffect = false }
+local apPart = nil
+local apAngle= 0
+
+local function buildAPEffect()
+    -- Destroy any leftover
+    if apPart and apPart.Parent then
+        pcall(function() apPart:Destroy() end)
+    end
+    apPart = nil
+
+    local part = Instance.new('Part')
+    part.Name        = 'AspectAPEffect'
+    part.Size        = Vector3.new(0.1, 0.1, 0.1)
+    part.Anchored    = true
+    part.CanCollide  = false
+    part.Transparency= 1
+    part.Parent      = workspace
+
+    local bb = Instance.new('BillboardGui')
+    bb.Name        = 'AspectAPBillboard'
+    bb.Size        = UDim2.new(0, 180, 0, 70)
+    bb.AlwaysOnTop = true
+    bb.Adornee     = part
+    bb.Parent      = part
+
+    local lbl = Instance.new('TextLabel')
+    lbl.Name                 = 'APLabel'
+    lbl.Size                 = UDim2.fromScale(1, 1)
+    lbl.BackgroundTransparency = 1
+    lbl.Text                 = 'AP'
+    -- Use FontFace (modern API, no Font enum number error)
+    lbl.FontFace             = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold)
+    lbl.TextScaled           = true
+    lbl.TextColor3           = Color3.fromRGB(255, 80, 80)
+    lbl.TextStrokeTransparency = 0
+    lbl.TextStrokeColor3     = Color3.fromRGB(0, 0, 0)
+    lbl.Parent               = bb
+
+    apPart = part
+end
+
+local function destroyAPEffect()
+    if apPart and apPart.Parent then
+        pcall(function() apPart:Destroy() end)
+    end
+    apPart = nil
+end
+
+-- AP orbit loop (only builds once, then just moves the part)
+RunService:BindToRenderStep('AspectAPEffect', Enum.RenderPriority.Camera.Value + 1, function()
+    if not FUN.apEffect then return end
+    local char = LocalPlayer.Character; if not char then return end
+    local hrp  = char:FindFirstChild('HumanoidRootPart'); if not hrp then return end
+
+    -- Build on first use or if it was destroyed
+    if not apPart or not apPart.Parent then
+        buildAPEffect()
+        if not apPart then return end
+    end
+
+    apAngle = (apAngle + 0.025) % (math.pi * 2)
+    local r  = 3   -- orbit radius in studs
+    apPart.CFrame = CFrame.new(
+        hrp.Position + Vector3.new(
+            math.cos(apAngle) * r,
+            1.8,
+            math.sin(apAngle) * r
+        )
+    )
+end)
+
+-- ================================================================
+--  GUN CHARM
+-- ================================================================
+local GUN = {
+    charm   = false,
+    color   = Color3.fromRGB(255, 255, 255),
+    rainbow = false,
+}
+
+local function getFirstPersonFolder()
+    local vm = workspace:FindFirstChild('ViewModels')
+    if not vm then return nil end
+    return vm:FindFirstChild('FirstPerson')
+end
+
+RunService.Heartbeat:Connect(function()
+    if not GUN.charm and not GUN.rainbow then return end
+    local fp = getFirstPersonFolder(); if not fp then return end
+    local col = GUN.rainbow and Color3.fromHSV(tick() * 0.3 % 1, 1, 1) or GUN.color
+    for _, obj in ipairs(fp:GetDescendants()) do
+        if obj:IsA('BasePart') or obj:IsA('MeshPart') then
+            pcall(function() obj.Color = col end)
+        end
+    end
+end)
+
+-- ================================================================
+--  NO ANIMATION
+-- ================================================================
+local scheduledForDeletion = {}
+local NOANIMENABLED        = false
+
+local function startNoAnim()
+    RunService:BindToRenderStep('AspectNoAnim', Enum.RenderPriority.Character.Value, function()
+        if not NOANIMENABLED then return end
+        local fp   = getFirstPersonFolder(); if not fp then return end
+        local name = LocalPlayer.Name:lower()
+        for _, child in ipairs(fp:GetChildren()) do
+            if child.Name:lower():find(name, 1, true) then
+                local nfp = child:FindFirstChild('FirstPerson')
+                if nfp and not scheduledForDeletion[nfp] then
+                    scheduledForDeletion[nfp] = true
+                    task.delay(1, function()
+                        if nfp and nfp.Parent then nfp:Destroy() end
+                        scheduledForDeletion[nfp] = nil
+                    end)
+                end
+            end
+        end
     end)
 end
 
-for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer then watchCharm(p) end end
-
-Players.PlayerAdded:Connect(function(p)
-    watchCharm(p); task.wait(1)
-    if ESP.box   then createBoxESP(p)   end
-    if ESP.line  then createLineESP(p)  end
-    if ESP.skel  then createSkelESP(p)  end
-    if ESP.charm then createCharmESP(p) end
-end)
-
-Players.PlayerRemoving:Connect(function(p)
-    removeBoxESP(p); removeLineESP(p); removeSkelESP(p); removeCharmESP(p)
-end)
-
-local function cleanup()
-    for p in pairs(espBoxes) do removeBoxESP(p) end
-    for p in pairs(espLines) do removeLineESP(p) end
-    for p in pairs(espSkel)  do removeSkelESP(p) end
-    for p in pairs(charmHL)  do removeCharmESP(p) end
-    pcall(function() RunService:UnbindFromRenderStep('AspectRainbow') end)
+local function stopNoAnim()
+    NOANIMENABLED = false
+    pcall(function() RunService:UnbindFromRenderStep('AspectNoAnim') end)
 end
 
+-- ================================================================
+--  CLEANUP
+-- ================================================================
+local function cleanup()
+    stopXRay()
+    removeCC()
+    destroyAPEffect()
+    crossDestroyAll()
+    stopNoAnim()
+    pcall(function() RunService:UnbindFromRenderStep('AspectCrosshair') end)
+    pcall(function() RunService:UnbindFromRenderStep('AspectAPEffect')  end)
+end
+
+-- ================================================================
+--  EXPORTS
+-- ================================================================
 return {
-    state         = ESP,
-    createBoxESP  = createBoxESP,
-    removeBoxESP  = removeBoxESP,
-    createLineESP = createLineESP,
-    removeLineESP = removeLineESP,
-    createSkelESP = createSkelESP,
-    removeSkelESP = removeSkelESP,
-    createCharmESP= createCharmESP,
-    removeCharmESP= removeCharmESP,
-    refreshCharm  = refreshCharm,
-    espBoxes      = espBoxes,
-    espLines      = espLines,
-    espSkel       = espSkel,
-    charmHL       = charmHL,
-    cleanup       = cleanup,
+    vis              = VIS,
+    cc               = CC,
+    cross            = CROSS,
+    fun              = FUN,
+    gun              = GUN,
+    startXRay        = startXRay,
+    stopXRay         = stopXRay,
+    applyFullbright  = applyFullbright,
+    applyCC          = applyCC,
+    removeCC         = removeCC,
+    applyCustomSkybox= applyCustomSkybox,
+    revertSkybox     = revertSkybox,
+    crossBuild       = crossBuild,
+    crossDestroyAll  = crossDestroyAll,
+    buildAPEffect    = buildAPEffect,
+    destroyAPEffect  = destroyAPEffect,
+    startNoAnim      = startNoAnim,
+    stopNoAnim       = stopNoAnim,
+    setNoAnim        = function(v) NOANIMENABLED = v end,
+    cleanup          = cleanup,
 }
